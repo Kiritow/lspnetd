@@ -54,6 +54,9 @@ class SecureChannelHTTPClient:
             "key": base64.b64encode(handshake_bytes).decode(),
             "sign": base64.b64encode(handshake_sign_bytes).decode(),
         })
+        if r.status_code != 200:
+            raise RuntimeError(f"Handshake failed. status: {r.status_code} body: {r.content.decode()}")
+
         response = HandshakeResponseSchema.model_validate_json(r.content)
         self.channel.complete_handshake(
             peer_public_key_bytes=base64.b64decode(response.key),
@@ -79,11 +82,13 @@ class SecureChannelHTTPClient:
         self.ensure()
         plaintext_bytes = json.dumps(data).encode()
         sec_message = self.channel.encrypt(plaintext_bytes)
-        payload = base64.b64encode(sec_message.to_bytes()).decode()
+        payload = sec_message.to_bytes()
 
         r = requests.post(f"https://{self.domain}/node/send", data=payload)
-        response_bytes = base64.b64decode(r.content)
+        if r.status_code != 200:
+            raise RuntimeError(f"Failed to send message. status: {r.status_code} body: {r.content.decode()}")
 
+        response_bytes = r.content
         sec_message = SecureMessage.from_bytes(response_bytes)
         plaintext_bytes = self.channel.decrypt(sec_message)
         return json.loads(plaintext_bytes)
